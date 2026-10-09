@@ -11,7 +11,7 @@
 #include "can_msgs/msg/frame.hpp"
 #include "f610_controller/msg/motor_target.hpp"
 #include "f610_controller/msg/motor_state.hpp"
-#include "rclcpp/rclcpp.hpp"
+#include "rclcpp/rclcpp.hpp"    
 
 class F610Controller : public rclcpp::Node
 {
@@ -112,13 +112,13 @@ private:
     // 速度PI
     double rps_to_current(Motor &motor, double target_rps, double dt)
     {
-        const double error = target_rps - motor.rpm / 60.0; // rpm→rps
+        const double error = target_rps - motor.rpm / 60.0; // 現在の速度誤差(rps)を算出
         const double proportional = velocity_kp_ * error;
         const double increment = velocity_ki_ * error * dt;
         const double candidate = std::clamp(motor.integral_ma + increment,
                                             -current_limit_ma_, current_limit_ma_);
         const double output = proportional + candidate;
-        // 積分方向を制御してみる　飽和が悪化しないようにしてみた
+        // 飽和抑制
         if ((output <= current_limit_ma_ || increment < 0.0) &&
             (output >= -current_limit_ma_ || increment > 0.0))
         {
@@ -127,16 +127,17 @@ private:
         return std::clamp(proportional + motor.integral_ma, -current_limit_ma_, current_limit_ma_);
     }
 
-    // 位置PD。出力軸の目標 [rad] からローターの目標速度 [rps] へ変換する。
+    // 位置PD
     double pos_to_rps(Motor &motor)
     {
-        const double error = motor.target.target_pos * gear_ratio_ - motor.rotor_position_rad;
+        const double error = motor.target.target_pos * gear_ratio_ - motor.rotor_position_rad; // 現在の角度誤差を算出
         // 目標通過後に、通過前の積分電流で押し続けないようにする。
         if (motor.previous_position_error && error * *motor.previous_position_error <= 0.0)
         {
             motor.integral_ma = 0.0;
         }
         motor.previous_position_error = error;
+        // ↓rpm→rad/sの変換と誤差が許容範囲ならIをリセット
         const double angular_velocity = motor.rpm * kTwoPi / 60.0;
         const bool at_target = std::abs(error) <= position_tolerance_rad_ * gear_ratio_;
         if (at_target)
@@ -144,6 +145,7 @@ private:
             // 許容範囲内ではI項を溜めず、D項と速度P項による減衰だけを残す。
             motor.integral_ma = 0.0;
         }
+        //
         return std::clamp((at_target ? 0.0 : position_kp_ * error) - position_kd_ * angular_velocity,
                           -position_speed_limit_rps_, position_speed_limit_rps_);
     }
@@ -152,14 +154,6 @@ private:
     {
         auto &motor = motors_[target.id - 1];
         used_groups_[(target.id - 1) / 4] = true;
-        if (!std::isfinite(target.target_rps) || !std::isfinite(target.target_pos) ||
-            (target.target_rps != 0.0f && target.target_pos != 0.0f))
-        {
-            motor.target_time.reset(); // 無効な指令なら次周期から0 mA。
-            motor.reset_control();
-            RCLCPP_WARN(get_logger(), "Invalid target for motor %d", target.id);
-            return;
-        }
         const auto now = Clock::now();
         if (!fresh(motor.target_time, now) || !fresh(motor.feedback_time, now) ||
             (target.target_rps == 0.0f && target.target_pos == 0.0f) ||
