@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(F610_Controller)
+project(f610_controller)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -7,11 +7,35 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(can_msgs REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/MotorTarget.msg"
+  "msg/MotorState.msg"
+)
+add_executable(f610_checker src/F610_controller_node.cpp)
+target_compile_features(f610_checker PRIVATE cxx_std_17)
+ament_target_dependencies(f610_checker rclcpp can_msgs)
+rosidl_get_typesupport_target(cpp_typesupport_target
+  ${PROJECT_NAME} rosidl_typesupport_cpp)
+target_link_libraries(f610_checker "${cpp_typesupport_target}")
+install(TARGETS f610_checker DESTINATION lib/${PROJECT_NAME})
+ament_export_dependencies(rosidl_default_runtime)
 if(BUILD_TESTING)
+  find_package(ament_cmake_test REQUIRED)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  ament_add_test(controller_integration
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_controller.py"
+      "$<TARGET_FILE:f610_checker>"
+    TIMEOUT 60
+    GENERATE_RESULT_FOR_RETURN_CODE_ZERO
+    ENV "ROS_LOG_DIR=${CMAKE_CURRENT_BINARY_DIR}/test_logs"
+      "ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST")
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
   # comment the line when a copyright and license is added to all source files
