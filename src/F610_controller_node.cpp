@@ -80,6 +80,11 @@ private:
         rcl_interfaces::msg::ParameterDescriptor descriptor;
         descriptor.read_only = true;
         value = declare_parameter<double>(name, value, descriptor);
+        if (!std::isfinite(value) || value < 0.0 || (positive && value == 0.0))
+        {
+            throw std::invalid_argument(name + " must be finite and " +
+                                        (positive ? "positive" : "nonnegative"));
+        }
         return value;
     }
     // 500msより古いデータは無視
@@ -90,6 +95,11 @@ private:
     // F610からのフィードバックを読み取り
     void on_feedback(const Frame &frame)
     {
+        if (frame.is_extended || frame.is_rtr || frame.is_error ||
+            frame.id < 0x201 || frame.id > 0x208 || frame.dlc < 6)
+        {
+            return;
+        }
         const int angle = (static_cast<int>(frame.data[0]) << 8) | frame.data[1];
         if (angle >= 8192)
             return;
@@ -152,8 +162,21 @@ private:
 
     void on_target(const Target &target)
     {
+        if (target.id < 1 || target.id > 8)
+        {
+            RCLCPP_WARN(get_logger(), "Motor ID must be in 1..8: %d", target.id);
+            return;
+        }
         auto &motor = motors_[target.id - 1];
         used_groups_[(target.id - 1) / 4] = true;
+        if (!std::isfinite(target.target_rps) || !std::isfinite(target.target_pos) ||
+            (target.target_rps != 0.0f && target.target_pos != 0.0f))
+        {
+            motor.target_time.reset();
+            motor.reset_control();
+            RCLCPP_WARN(get_logger(), "Invalid target for motor %d", target.id);
+            return;
+        }
         const auto now = Clock::now();
         if (!fresh(motor.target_time, now) || !fresh(motor.feedback_time, now) ||
             (target.target_rps == 0.0f && target.target_pos == 0.0f) ||

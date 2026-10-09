@@ -2,8 +2,8 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>f610_controller</name>
-  <version>0.0.0</version>
-  <description>Easy Controller for C610, F610</description>
+  <version>1.0.0</version>
+  <description>Easy Controller for F610(C610)</description>
   <maintainer email="sunahara.kenshin.ie@tut.jp">Macanuts</maintainer>
   <license>MIT</license>
 
