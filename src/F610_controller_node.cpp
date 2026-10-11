@@ -11,7 +11,7 @@
 #include "can_msgs/msg/frame.hpp"
 #include "f610_controller/msg/motor_target.hpp"
 #include "f610_controller/msg/motor_state.hpp"
-#include "rclcpp/rclcpp.hpp"    
+#include "rclcpp/rclcpp.hpp"
 
 class F610Controller : public rclcpp::Node
 {
@@ -25,15 +25,11 @@ public:
     {
         rcl_interfaces::msg::ParameterDescriptor descriptor;
         descriptor.read_only = true;
-        const auto control_period_ms = declare_parameter<int>("control_period_ms", 10, descriptor);
-        if (control_period_ms < 1 || control_period_ms > 20)
-        {
-            throw std::invalid_argument("control_period_ms must be in 1..20");
-        }
+        const int control_period_ms = declare_parameter<int>("control_period_ms", 10, descriptor);
         velocity_kp_ = parameter("velocity_kp", 80.0);                                // 速度P
         velocity_ki_ = parameter("velocity_ki", 40.0);                                // 速度I
         position_kp_ = parameter("position_kp", 1.0);                                 // 位置P
-        position_kd_ = parameter("position_kd", 0.01);                                // 位置 D
+        position_kd_ = parameter("position_kd", 0.01);                                // 位置D
         position_tolerance_rad_ = parameter("position_tolerance_rad", 0.008);         // 位置許容誤差[rad]
         gear_ratio_ = parameter("gear_ratio", 36.0, true);                            // エンコーダーと軸のギヤ比
         current_limit_ma_ = parameter("current_limit_ma", 1000.0, true);              // 電流制限[mA]
@@ -53,8 +49,8 @@ public:
     }
 
 private:
-    static constexpr double kTwoPi = 6.28318530717958647692;
-    static constexpr auto kTimeout = std::chrono::milliseconds(500);
+    static constexpr double kTwoPi = 6.28318530717958647692;         // π x 2
+    static constexpr auto kTimeout = std::chrono::milliseconds(500); // 500ms
 
     struct Motor
     {
@@ -63,11 +59,17 @@ private:
         std::optional<Clock::time_point> feedback_time;
         std::optional<int> previous_angle;
         std::optional<double> previous_position_error;
-        double rotor_position_rad = 0.0;
+        int64_t rotor_position_counts = 0;
         double integral_ma = 0.0;
         int16_t rpm = 0;
         int16_t command_ma = 0;
 
+        // エンコーダーからの累積カウントを回転速度[rad]に変換する
+        double rotor_position_rad() const
+        {
+            return static_cast<double>(rotor_position_counts) * kTwoPi / 8192.0;
+        }
+        // 名前の通り
         void reset_control()
         {
             integral_ma = 0.0;
@@ -87,7 +89,7 @@ private:
         }
         return value;
     }
-    // 500msより古いデータは無視
+    // 500msより古いデータは無視する
     static bool fresh(const std::optional<Clock::time_point> &time, Clock::time_point now)
     {
         return time && now - *time < kTimeout;
@@ -111,7 +113,16 @@ private:
                 delta -= 8192;
             if (delta < -4096)
                 delta += 8192;
-            motor.rotor_position_rad += delta * kTwoPi / 8192.0;
+            motor.rotor_position_counts += delta;
+        }
+        else
+        {
+            // 全体再起動時は最初の実測位置を原点にする。単回転角度を
+            // 絶対的な出力軸位置や、電源断前の多回転位置として扱わない。
+            motor.rotor_position_counts = 0;
+            motor.reset_control();
+            RCLCPP_INFO(get_logger(), "Motor %u initialized: current position is origin (encoder=%d)",
+                        static_cast<unsigned>(frame.id - 0x200), angle);
         }
         motor.previous_angle = angle;
         motor.rpm = static_cast<int16_t>((static_cast<uint16_t>(frame.data[2]) << 8) |
@@ -140,7 +151,7 @@ private:
     // 位置PD
     double pos_to_rps(Motor &motor)
     {
-        const double error = motor.target.target_pos * gear_ratio_ - motor.rotor_position_rad; // 現在の角度誤差を算出
+        const double error = motor.target.target_pos * gear_ratio_ - motor.rotor_position_rad(); // 現在の角度誤差を算出
         // 目標通過後に、通過前の積分電流で押し続けないようにする。
         if (motor.previous_position_error && error * *motor.previous_position_error <= 0.0)
         {
@@ -160,6 +171,15 @@ private:
                           -position_speed_limit_rps_, position_speed_limit_rps_);
     }
 
+    static uint8_t control_mode(const Target &target)
+    {
+        if (target.mode != Target::AUTO)
+            return target.mode;
+        if (target.target_pos != 0.0)
+            return Target::POSITION;
+        return target.target_rps != 0.0 ? Target::VELOCITY : Target::STOP;
+    }
+
     void on_target(const Target &target)
     {
         if (target.id < 1 || target.id > 8)
@@ -169,8 +189,13 @@ private:
         }
         auto &motor = motors_[target.id - 1];
         used_groups_[(target.id - 1) / 4] = true;
+        const auto mode = control_mode(target);
         if (!std::isfinite(target.target_rps) || !std::isfinite(target.target_pos) ||
-            (target.target_rps != 0.0f && target.target_pos != 0.0f))
+            !std::isfinite(target.target_pos * gear_ratio_) ||
+            target.mode > Target::POSITION ||
+            (mode == Target::POSITION && target.target_rps != 0.0) ||
+            (mode == Target::VELOCITY && target.target_pos != 0.0) ||
+            (mode == Target::STOP && (target.target_rps != 0.0 || target.target_pos != 0.0)))
         {
             motor.target_time.reset();
             motor.reset_control();
@@ -179,8 +204,7 @@ private:
         }
         const auto now = Clock::now();
         if (!fresh(motor.target_time, now) || !fresh(motor.feedback_time, now) ||
-            (target.target_rps == 0.0f && target.target_pos == 0.0f) ||
-            ((motor.target.target_pos != 0.0f) != (target.target_pos != 0.0f)))
+            mode == Target::STOP || control_mode(motor.target) != mode)
         {
             motor.reset_control();
         }
@@ -192,8 +216,8 @@ private:
     {
         State state;
         state.id = id;
-        state.position_rad = motor.rotor_position_rad / gear_ratio_;
-        state.rotor_position_rad = motor.rotor_position_rad;
+        state.position_rad = motor.rotor_position_rad() / gear_ratio_;
+        state.rotor_position_rad = motor.rotor_position_rad();
         state.velocity_rps = motor.rpm / 60.0;
         state.rotor_rpm = motor.rpm;
         state.commanded_current_ma = motor.command_ma;
@@ -218,9 +242,9 @@ private:
             double current_ma = 0.0;
             const bool feedback_ok = fresh(motor.feedback_time, tick);
             if (valid_dt && feedback_ok && fresh(motor.target_time, tick) &&
-                (motor.target.target_rps != 0.0f || motor.target.target_pos != 0.0f))
+                control_mode(motor.target) != Target::STOP)
             {
-                const double target_rps = motor.target.target_pos != 0.0f
+                const double target_rps = control_mode(motor.target) == Target::POSITION
                                               ? pos_to_rps(motor)
                                               : motor.target.target_rps;
                 current_ma = rps_to_current(motor, target_rps, dt);

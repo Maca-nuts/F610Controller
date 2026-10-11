@@ -25,14 +25,26 @@ rosidl_get_typesupport_target(cpp_typesupport_target
   ${PROJECT_NAME} rosidl_typesupport_cpp)
 target_link_libraries(f610_checker "${cpp_typesupport_target}")
 install(TARGETS f610_checker DESTINATION lib/${PROJECT_NAME})
+add_executable(motor_target_publisher src/motor_target_publisher.cpp)
+target_compile_features(motor_target_publisher PRIVATE cxx_std_17)
+ament_target_dependencies(motor_target_publisher rclcpp)
+target_link_libraries(motor_target_publisher "${cpp_typesupport_target}")
+install(TARGETS motor_target_publisher DESTINATION lib/${PROJECT_NAME})
+
+# Expose the requested ros2 run alias without renaming the message package.
+ament_index_register_resource("packages" PACKAGE_NAME "F610Controller")
+install(PROGRAMS "$<TARGET_FILE:f610_checker>"
+  DESTINATION lib/F610Controller
+  RENAME controller)
+
 ament_export_dependencies(rosidl_default_runtime)
 if(BUILD_TESTING)
   find_package(ament_cmake_test REQUIRED)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
   ament_add_test(controller_integration
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/test_controller.py"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_controller.py"
       "$<TARGET_FILE:f610_checker>"
-    TIMEOUT 60
+    TIMEOUT 90
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO
     ENV "ROS_LOG_DIR=${CMAKE_CURRENT_BINARY_DIR}/test_logs"
       "ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST")

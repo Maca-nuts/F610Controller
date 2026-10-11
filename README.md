@@ -1,6 +1,59 @@
 # F610Controller
 
-F610(C610)用コントローラー。速度PI、または位置PD→速度PIのカスケード制御を提供
+F610(C610)用コントローラー。速度PI制御と位置PD→速度PIのカスケード制御を提供
+
+## コントローラーの起動
+
+```bash
+ros2 run f610_controller controller
+```
+
+## 指令ノードの起動
+
+```bash
+ros2 run f610_controller motor_target_publisher --ros-args -p motor_id:=1 -p mode:=position -p target_pos:=1.57
+```
+
+### motor_target_publisher のパラメータ
+
+| 引数           | 既定値 | 意味                                                       |
+| -------------- | ------ | ---------------------------------------------------------- |
+| `motor_id`     | `1`    | モーターID。整数1〜8                                       |
+| `mode`         | `auto` | `auto` / `position` / `velocity` / `stop`　(下記を参照)    |
+| `target_pos`   | `0.0`  | 起動原点からの出力軸位置 [rad]。正負の多回転指定が可能     |
+| `target_turns` | `0.0`  | 起動原点からの出力軸回転数。内部で `回転数 × 2π` radへ変換 |
+| `target_rps`   | `0.0`  | ローター速度 [回転/秒]。出力軸速度ではない                 |
+
+
+| mode       | 動作                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------ |
+| `position` | 指定位置へ移動して保持。位置0も原点への位置指令                                      |
+| `velocity` | `target_rps` で速度制御。速度0は速度制御による停止                                   |
+| `stop`     | 電流指令0。位置保持なし。目標値はすべて0にする                                       |
+| `auto`     | 非ゼロの位置目標があれば位置制御、非ゼロの速度目標があれば速度制御。すべて0なら電流0 |
+
+### radによる±101回転と原点復帰
+
+多回転を前提に書いてるので2πで折返しなどはせず、回り続ける
+
+e.g. 出力軸101回転は `101 × 2π = 634.6017160251382 rad` 
+
+motor_target_publisherの使い方例
+```bash
+# +101回転の位置（rad指定）
+ros2 run f610_controller motor_target_publisher --ros-args -p mode:=position -p target_pos:=634.6017160251382
+# -101回転の位置（rad指定）
+ros2 run f610_controller motor_target_publisher --ros-args -p mode:=position -p target_pos:=-634.6017160251382
+# 同じ+101回転を回転数で指定
+ros2 run f610_controller motor_target_publisher --ros-args -p mode:=position -p target_turns:=101
+# 原点へ戻って保持
+ros2 run f610_controller motor_target_publisher --ros-args -p mode:=position -p target_pos:=0
+# ローターを5 rpsで速度制御
+ros2 run f610_controller motor_target_publisher --ros-args -p mode:=velocity -p target_rps:=5
+# 電流指令0
+ros2 run f610_controller motor_target_publisher --ros-args -p mode:=stop
+```
+
 
 ## 入出力と単位
 
@@ -26,5 +79,6 @@ F610(C610)用コントローラー。速度PI、または位置PD→速度PIの�
 | `current_limit_ma`         | 1000.0 | mA                            |
 | `control_period_ms`        |     10 | ms、1〜20                     |
 
-速度指令の例: `{id: 1, target_rps: 5.0, target_pos: 0.0}`
-位置指令の例: `{id: 1, target_rps: 0.0, target_pos: 1.57}`
+## 更新記録
+V1.0.0 プロジェクト公開
+V1.1.0 専用のpublisherを追加
