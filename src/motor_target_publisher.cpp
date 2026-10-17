@@ -43,14 +43,14 @@ public:
         target_.target_rps = target_rps;
         target_.target_pos = target_pos;
         publisher_ = create_publisher<f610_controller::msg::MotorTarget>("motor_target", 10);
-        RCLCPP_INFO(get_logger(), "Publishing motor %d: mode=%s, target_rps=%.3f, target_pos=%.9f rad",
+        RCLCPP_INFO(get_logger(), "Publishing motor %d: mode=%s, target_rps=%.3f output-shaft rps, target_pos=%.9f rad",
                     static_cast<int>(motor_id), mode.c_str(), target_rps, target_pos);
         timer_ = create_wall_timer(std::chrono::milliseconds(100), [this]()
                                    {
                                        if (publisher_->get_subscription_count() == 0)
                                        {
                                            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
-                                                                "No motor_target subscriber; start f610_checker");
+                                                                "No motor_target subscriber; start controller node");
                                        }
                                        publisher_->publish(target_); });
     }

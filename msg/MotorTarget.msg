@@ -1,9 +1,10 @@
 # C610 motor ID: 1..8
 int32 id
-# Rotor speed [rps]. Set to 0 for position control.
+# Output-shaft speed [rps], converted to rotor speed using gear_ratio.
+# Set to 0 for position control.
 float64 target_rps
 # Output-shaft position [rad], relative to first feedback, unwrapped across turns.
-# Converted using gear_ratio (default 36:1); target_rps remains rotor rps.
+# Converted using gear_ratio (default 36:1).
 # In AUTO mode: zero selects speed control; both zero means zero current.
 # POSITION mode: zero commands the origin. Unused targets must be zero.
 float64 target_pos

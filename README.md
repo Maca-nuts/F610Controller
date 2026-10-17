@@ -22,7 +22,7 @@ ros2 run f610_controller motor_target_publisher --ros-args -p motor_id:=1 -p mod
 | `mode`         | `auto` | `auto` / `position` / `velocity` / `stop`　(下記を参照)    |
 | `target_pos`   | `0.0`  | 起動原点からの出力軸位置 [rad]。正負の多回転指定が可能     |
 | `target_turns` | `0.0`  | 起動原点からの出力軸回転数。内部で `回転数 × 2π` radへ変換 |
-| `target_rps`   | `0.0`  | ローター速度 [回転/秒]。出力軸速度ではない                 |
+| `target_rps`   | `0.0`  | 出力軸速度 [回転/秒]。内部で `gear_ratio` 倍してローター速度へ変換                 |
 
 
 | mode       | 動作                                                                                 |
@@ -48,8 +48,8 @@ ros2 run f610_controller motor_target_publisher --ros-args -p mode:=position -p 
 ros2 run f610_controller motor_target_publisher --ros-args -p mode:=position -p target_turns:=101
 # 原点へ戻って保持
 ros2 run f610_controller motor_target_publisher --ros-args -p mode:=position -p target_pos:=0
-# ローターを5 rpsで速度制御
-ros2 run f610_controller motor_target_publisher --ros-args -p mode:=velocity -p target_rps:=5
+# 出力軸を1 rpsで速度制御（gear_ratio=36ならローターは36 rps）
+ros2 run f610_controller motor_target_publisher --ros-args -p mode:=velocity -p target_rps:=1
 # 電流指令0
 ros2 run f610_controller motor_target_publisher --ros-args -p mode:=stop
 ```
@@ -63,6 +63,9 @@ ros2 run f610_controller motor_target_publisher --ros-args -p mode:=stop
 | `motor_state`  | `f610_controller/msg/MotorState`  | 位置・速度・指令電流・I項 |
 | `from_can_bus` | `can_msgs/msg/Frame`              | モーターフィードバック    |
 | `to_can_bus`   | `can_msgs/msg/Frame`              | 電流指令                  |
+
+`target_rps` は出力軸の速度です。`motor_state.velocity_rps` と
+`position_speed_limit_rps`、制御ゲインは引き続きローター基準です。
 
 ## 暫定のパラメータ
 

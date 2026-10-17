@@ -49,7 +49,9 @@ public:
     }
 
 private:
-    static constexpr double kTwoPi = 6.28318530717958647692;         // π x 2
+    static constexpr double kTwoPi = 6.28318530717958647692; // π x 2
+    static constexpr int kEncoderCountsPerTurn = 8192;
+    static constexpr int kHalfEncoderTurn = kEncoderCountsPerTurn / 2;
     static constexpr auto kTimeout = std::chrono::milliseconds(500); // 500ms
 
     struct Motor
@@ -64,10 +66,10 @@ private:
         int16_t rpm = 0;
         int16_t command_ma = 0;
 
-        // エンコーダーからの累積カウントを回転速度[rad]に変換する
+        // エンコーダーの累積カウントをローター角度[rad]に変換する
         double rotor_position_rad() const
         {
-            return static_cast<double>(rotor_position_counts) * kTwoPi / 8192.0;
+            return static_cast<double>(rotor_position_counts) * kTwoPi / kEncoderCountsPerTurn;
         }
         // 名前の通り
         void reset_control()
@@ -94,6 +96,18 @@ private:
     {
         return time && now - *time < kTimeout;
     }
+
+    // 0/8191をまたいでも、前回値からの最短の回転差分を返す。
+    static int encoder_delta(int angle, int previous_angle)
+    {
+        int delta = angle - previous_angle;
+        if (delta > kHalfEncoderTurn)
+            delta -= kEncoderCountsPerTurn;
+        else if (delta < -kHalfEncoderTurn)
+            delta += kEncoderCountsPerTurn;
+        return delta;
+    }
+
     // F610からのフィードバックを読み取り
     void on_feedback(const Frame &frame)
     {
@@ -103,17 +117,13 @@ private:
             return;
         }
         const int angle = (static_cast<int>(frame.data[0]) << 8) | frame.data[1];
-        if (angle >= 8192)
+        if (angle >= kEncoderCountsPerTurn)
             return;
         auto &motor = motors_[frame.id - 0x201];
         if (motor.previous_angle)
         {
-            int delta = angle - *motor.previous_angle;
-            if (delta > 4096)
-                delta -= 8192;
-            if (delta < -4096)
-                delta += 8192;
-            motor.rotor_position_counts += delta;
+            // フィードバックごとの差分を積算し、連続した角度を提供
+            motor.rotor_position_counts += encoder_delta(angle, *motor.previous_angle);
         }
         else
         {
@@ -151,7 +161,7 @@ private:
     // 位置PD
     double pos_to_rps(Motor &motor)
     {
-        const double error = motor.target.target_pos * gear_ratio_ - motor.rotor_position_rad(); // 現在の角度誤差を算出
+        const double error = motor.target.target_pos * gear_ratio_ - motor.rotor_position_rad(); // 累積角度との差で位置制御
         // 目標通過後に、通過前の積分電流で押し続けないようにする。
         if (motor.previous_position_error && error * *motor.previous_position_error <= 0.0)
         {
@@ -192,6 +202,7 @@ private:
         const auto mode = control_mode(target);
         if (!std::isfinite(target.target_rps) || !std::isfinite(target.target_pos) ||
             !std::isfinite(target.target_pos * gear_ratio_) ||
+            !std::isfinite(target.target_rps * gear_ratio_) ||
             target.mode > Target::POSITION ||
             (mode == Target::POSITION && target.target_rps != 0.0) ||
             (mode == Target::VELOCITY && target.target_pos != 0.0) ||
@@ -246,7 +257,7 @@ private:
             {
                 const double target_rps = control_mode(motor.target) == Target::POSITION
                                               ? pos_to_rps(motor)
-                                              : motor.target.target_rps;
+                                              : motor.target.target_rps * gear_ratio_;
                 current_ma = rps_to_current(motor, target_rps, dt);
             }
             else

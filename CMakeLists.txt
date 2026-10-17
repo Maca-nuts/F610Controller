@@ -18,13 +18,13 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MotorTarget.msg"
   "msg/MotorState.msg"
 )
-add_executable(f610_checker src/F610_controller_node.cpp)
-target_compile_features(f610_checker PRIVATE cxx_std_17)
-ament_target_dependencies(f610_checker rclcpp can_msgs)
+add_executable(controller src/F610_controller_node.cpp)
+target_compile_features(controller PRIVATE cxx_std_17)
+ament_target_dependencies(controller rclcpp can_msgs)
 rosidl_get_typesupport_target(cpp_typesupport_target
   ${PROJECT_NAME} rosidl_typesupport_cpp)
-target_link_libraries(f610_checker "${cpp_typesupport_target}")
-install(TARGETS f610_checker DESTINATION lib/${PROJECT_NAME})
+target_link_libraries(controller "${cpp_typesupport_target}")
+install(TARGETS controller DESTINATION lib/${PROJECT_NAME})
 add_executable(motor_target_publisher src/motor_target_publisher.cpp)
 target_compile_features(motor_target_publisher PRIVATE cxx_std_17)
 ament_target_dependencies(motor_target_publisher rclcpp)
@@ -33,7 +33,7 @@ install(TARGETS motor_target_publisher DESTINATION lib/${PROJECT_NAME})
 
 # Expose the requested ros2 run alias without renaming the message package.
 ament_index_register_resource("packages" PACKAGE_NAME "F610Controller")
-install(PROGRAMS "$<TARGET_FILE:f610_checker>"
+install(PROGRAMS "$<TARGET_FILE:controller>"
   DESTINATION lib/F610Controller
   RENAME controller)
 
@@ -43,7 +43,7 @@ if(BUILD_TESTING)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
   ament_add_test(controller_integration
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_controller.py"
-      "$<TARGET_FILE:f610_checker>"
+      "$<TARGET_FILE:controller>"
     TIMEOUT 90
     GENERATE_RESULT_FOR_RETURN_CODE_ZERO
     ENV "ROS_LOG_DIR=${CMAKE_CURRENT_BINARY_DIR}/test_logs"
