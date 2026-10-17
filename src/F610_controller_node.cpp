@@ -34,6 +34,15 @@ public:
         gear_ratio_ = parameter("gear_ratio", 36.0, true);                            // エンコーダーと軸のギヤ比
         current_limit_ma_ = parameter("current_limit_ma", 1000.0, true);              // 電流制限[mA]
         position_speed_limit_rps_ = parameter("position_speed_limit_rps", 5.0, true); // 位置制御の速度制限[rps]
+        for (std::size_t index = 0; index < motors_.size(); ++index)
+        {
+            const auto prefix = "motors.id_" + std::to_string(index + 1) + ".";
+            auto &motor = motors_[index];
+            motor.velocity_kp = parameter(prefix + "velocity_kp", velocity_kp_);
+            motor.velocity_ki = parameter(prefix + "velocity_ki", velocity_ki_);
+            motor.position_kp = parameter(prefix + "position_kp", position_kp_);
+            motor.position_kd = parameter(prefix + "position_kd", position_kd_);
+        }
         state_pub_ = create_publisher<State>("motor_state", 10);
         can_pub_ = create_publisher<Frame>("to_can_bus", 10);
         target_sub_ = create_subscription<Target>(
@@ -56,6 +65,10 @@ private:
 
     struct Motor
     {
+        double velocity_kp = 0.0;
+        double velocity_ki = 0.0;
+        double position_kp = 0.0;
+        double position_kd = 0.0;
         Target target{};
         std::optional<Clock::time_point> target_time;
         std::optional<Clock::time_point> feedback_time;
@@ -144,8 +157,8 @@ private:
     double rps_to_current(Motor &motor, double target_rps, double dt)
     {
         const double error = target_rps - motor.rpm / 60.0; // 現在の速度誤差(rps)を算出
-        const double proportional = velocity_kp_ * error;
-        const double increment = velocity_ki_ * error * dt;
+        const double proportional = motor.velocity_kp * error;
+        const double increment = motor.velocity_ki * error * dt;
         const double candidate = std::clamp(motor.integral_ma + increment,
                                             -current_limit_ma_, current_limit_ma_);
         const double output = proportional + candidate;
@@ -177,7 +190,7 @@ private:
             motor.integral_ma = 0.0;
         }
         //
-        return std::clamp((at_target ? 0.0 : position_kp_ * error) - position_kd_ * angular_velocity,
+        return std::clamp((at_target ? 0.0 : motor.position_kp * error) - motor.position_kd * angular_velocity,
                           -position_speed_limit_rps_, position_speed_limit_rps_);
     }
 

@@ -37,6 +37,8 @@ install(PROGRAMS "$<TARGET_FILE:controller>"
   DESTINATION lib/F610Controller
   RENAME controller)
 
+install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
+
 ament_export_dependencies(rosidl_default_runtime)
 if(BUILD_TESTING)
   find_package(ament_cmake_test REQUIRED)

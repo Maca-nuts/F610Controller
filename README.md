@@ -5,9 +5,31 @@ F610(C610)用コントローラー。速度PI制御と位置PD→速度PIのカ�
 ## コントローラーの起動
 
 ```bash
-ros2 run f610_controller controller
+colcon build --packages-select f610_controller
+source install/setup.bash
+ros2 launch f610_controller f610_controller.launch.py
+
+# 別のYAMLを指定する場合（絶対パス）
+ros2 launch f610_controller f610_controller.launch.py params_file:=/absolute/path/motors.yaml
 ```
 
+既定の設定は `config/f610_controller.yaml`。`motors.id_1`〜`motors.id_8` が
+`MotorTarget.id` の1〜8に対応します。各IDに速度PIの `velocity_kp` / `velocity_ki`、
+位置PDの `position_kp` / `position_kd` を指定できます。
+
+```yaml
+f610_control:
+  ros__parameters:
+    motors:
+      id_1:
+        velocity_kp: 80.0
+        velocity_ki: 40.0
+        position_kp: 1.0
+        position_kd: 0.01
+      id_2:
+        velocity_kp: 100.0
+        velocity_ki: 50.0
+```
 ## 指令ノードの起動
 
 ```bash
@@ -16,13 +38,13 @@ ros2 run f610_controller motor_target_publisher --ros-args -p motor_id:=1 -p mod
 
 ### motor_target_publisher のパラメータ
 
-| 引数           | 既定値 | 意味                                                       |
-| -------------- | ------ | ---------------------------------------------------------- |
-| `motor_id`     | `1`    | モーターID。整数1〜8                                       |
-| `mode`         | `auto` | `auto` / `position` / `velocity` / `stop`　(下記を参照)    |
-| `target_pos`   | `0.0`  | 起動原点からの出力軸位置 [rad]。正負の多回転指定が可能     |
-| `target_turns` | `0.0`  | 起動原点からの出力軸回転数。内部で `回転数 × 2π` radへ変換 |
-| `target_rps`   | `0.0`  | 出力軸速度 [回転/秒]。内部で `gear_ratio` 倍してローター速度へ変換                 |
+| 引数           | 既定値 | 意味                                                               |
+| -------------- | ------ | ------------------------------------------------------------------ |
+| `motor_id`     | `1`    | モーターID。整数1〜8                                               |
+| `mode`         | `auto` | `auto` / `position` / `velocity` / `stop`　(下記を参照)            |
+| `target_pos`   | `0.0`  | 起動原点からの出力軸位置 [rad]。正負の多回転指定が可能             |
+| `target_turns` | `0.0`  | 起動原点からの出力軸回転数。内部で `回転数 × 2π` radへ変換         |
+| `target_rps`   | `0.0`  | 出力軸速度 [回転/秒]。内部で `gear_ratio` 倍してローター速度へ変換 |
 
 
 | mode       | 動作                                                                                 |
