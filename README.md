@@ -80,6 +80,7 @@ ros2 run f610_controller motor_target_publisher --ros-args -p mode:=stop
 | `control_period_ms`        |     10 | ms、1〜20                     |
 
 ## 更新記録
+
 V1.0.0 プロジェクト公開
 
 V1.1.0 専用のpublisherを追加
